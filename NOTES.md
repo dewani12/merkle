@@ -1,6 +1,6 @@
 # Sanctum Sanctorum - Submission Notes
 
-*Note: I had my minor exams at IIIT Gwalior from September 20th to 26th, so I ended up tackling this entire assignment in a single, focused sitting today (September 27th), working from about 4:30 PM until submission (roughly 7 hours).*
+*Note: I had my minor exams at IIIT Gwalior from September 20th to 26th, so I ended up tackling this entire assignment in a single, focused sitting today (September 27th), working from about 4:00 PM until submission (roughly 8 hours).*
 
 **Live URL:** https://merkle.onrender.com/ (Swagger UI is at `/docs`)
 

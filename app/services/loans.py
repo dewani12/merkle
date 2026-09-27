@@ -69,7 +69,7 @@ def create_loan(db: Session, data: LoanCreate, now: datetime) -> LoanOut:
     """
     # 1. 404 member / book
     member = get_member(db, data.member_id)
-    book = db.get(Book, data.book_id)
+    book = db.get(Book, data.book_id, with_for_update=True)
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
 
@@ -148,7 +148,7 @@ def return_loan(db: Session, loan_id: int, now: datetime) -> LoanOut:
     if loan.returned_at is not None:
         raise HTTPException(status_code=409, detail="Loan is already returned")
 
-    book = db.get(Book, loan.book_id)
+    book = db.get(Book, loan.book_id, with_for_update=True)
     
     loan.returned_at = now
     loan.late_fee_cents = calculate_late_fee(loan.due_at, now, book.price_cents if book else 0)

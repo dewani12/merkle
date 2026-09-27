@@ -40,14 +40,18 @@ def create_order(db: Session, data: OrderCreate, now: datetime) -> Order:
     Then stock is decremented for every item and prices are snapshotted.
     Pricing: discount_cents = subtotal * percent // 100; total = subtotal - discount.
     """
-    # 1. Load member (404) and all books (404)
+    # 1. Load member (404) and all books (404). 
+    # Fetch books in sorted order of book_id to prevent deadlocks when acquiring row locks.
     member = get_member(db, data.member_id)
-    books = []
-    for item in data.items:
-        book = db.get(Book, item.book_id)
+    
+    sorted_book_ids = sorted({item.book_id for item in data.items})
+    for book_id in sorted_book_ids:
+        book = db.get(Book, book_id, with_for_update=True)
         if book is None:
-            raise HTTPException(status_code=404, detail=f"Book {item.book_id} not found")
-        books.append(book)
+            raise HTTPException(status_code=404, detail=f"Book {book_id} not found")
+            
+    # Now build the books list matching the exact original data.items order
+    books = [db.get(Book, item.book_id) for item in data.items]
 
     # 2. Restricted check (403)
     for book in books:
@@ -119,6 +123,11 @@ def cancel_order(db: Session, order_id: int) -> Order:
     order = get_order(db, order_id)
     if order.status != OrderStatus.PENDING.value:
         raise HTTPException(status_code=409, detail=f"Cannot cancel an order that is {order.status}")
+    # Sort items by book_id to prevent deadlocks when acquiring row locks
+    sorted_book_ids = sorted({item.book_id for item in order.items})
+    for book_id in sorted_book_ids:
+        db.get(Book, book_id, with_for_update=True)
+        
     for item in order.items:
         book = db.get(Book, item.book_id)
         if book is not None:
