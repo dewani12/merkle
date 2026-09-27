@@ -57,6 +57,11 @@ def get_member(db: Session, member_id: int) -> Member:
     return member
 
 
+def list_members(db: Session, skip: int = 0, limit: int = 100) -> List[Member]:
+    """List members with offset pagination."""
+    return list(db.scalars(select(Member).order_by(Member.id).offset(skip).limit(limit)))
+
+
 def list_member_orders(db: Session, member_id: int) -> List[Order]:
     """All orders of a member ordered by id ascending; 404 if the member is missing."""
     get_member(db, member_id)
