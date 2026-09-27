@@ -1,5 +1,6 @@
 """Library loan operations: borrowing and returning books."""
 from datetime import datetime, timedelta
+import math
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -44,7 +45,10 @@ def to_loan_out(loan: Loan, now: datetime) -> LoanOut:
 
 def calculate_late_fee(due_at: datetime, returned_at: datetime, price_cents: int) -> int:
     """25 cents per started day late (any partial day counts), capped at the book's price; 0 if not late."""
-    raise NotImplementedError("calculate_late_fee")
+    if returned_at <= due_at:
+        return 0
+    days_late = math.ceil((returned_at - due_at).total_seconds() / 86400)
+    return min(days_late * LATE_FEE_PER_DAY_CENTS, price_cents)
 
 
 def create_loan(db: Session, data: LoanCreate, now: datetime) -> LoanOut:
