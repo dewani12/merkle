@@ -3,9 +3,12 @@ from datetime import datetime, timedelta
 import math
 from typing import Dict, List, Optional
 
+from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Loan, MemberTier
+from app.models import Book, Loan, MemberTier
+from app.services.members import ensure_can_access_restricted, get_member
 from app.schemas import LoanCreate, LoanOut, LoanStatus
 
 # Maximum concurrent unreturned loans per tier (None = unlimited).
@@ -64,7 +67,65 @@ def create_loan(db: Session, data: LoanCreate, now: datetime) -> LoanOut:
     On success: borrowed_at = now, due_at = now + 14 days, returned_at None,
     late_fee_cents 0, and stock is decremented by one.
     """
-    raise NotImplementedError("create_loan")
+    # 1. 404 member / book
+    member = get_member(db, data.member_id)
+    book = db.get(Book, data.book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # 2. 403 restricted
+    if book.restricted:
+        ensure_can_access_restricted(member)
+
+    # 3. 409 overdue loans
+    overdue_count = db.scalar(
+        select(func.count(Loan.id))
+        .where(Loan.member_id == member.id)
+        .where(Loan.returned_at.is_(None))
+        .where(Loan.due_at < now)
+    )
+    if overdue_count > 0:
+        raise HTTPException(status_code=409, detail="Cannot borrow books with overdue loans")
+
+    # 4. 409 already has this book
+    already_has = db.scalar(
+        select(func.count(Loan.id))
+        .where(Loan.member_id == member.id)
+        .where(Loan.book_id == book.id)
+        .where(Loan.returned_at.is_(None))
+    )
+    if already_has > 0:
+        raise HTTPException(status_code=409, detail="You already have an active loan for this book")
+
+    # 5. 409 loan limit
+    limit = TIER_LOAN_LIMIT[member.tier]
+    if limit is not None:
+        active_count = db.scalar(
+            select(func.count(Loan.id))
+            .where(Loan.member_id == member.id)
+            .where(Loan.returned_at.is_(None))
+        )
+        if active_count >= limit:
+            raise HTTPException(status_code=409, detail=f"Loan limit of {limit} reached")
+
+    # 6. 409 out of stock
+    if book.stock < 1:
+        raise HTTPException(status_code=409, detail="Book is out of stock")
+
+    # Success
+    book.stock -= 1
+    loan = Loan(
+        member_id=member.id,
+        book_id=book.id,
+        borrowed_at=now,
+        due_at=now + LOAN_PERIOD,
+        returned_at=None,
+        late_fee_cents=0,
+    )
+    db.add(loan)
+    db.commit()
+    db.refresh(loan)
+    return to_loan_out(loan, now)
 
 
 def get_loan(db: Session, loan_id: int, now: datetime) -> LoanOut:
